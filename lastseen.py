@@ -109,7 +109,6 @@ class LastSeen(object):
             resp = urllib.request.urlopen(req)
             cfg = open(self.cfg_file, 'w')
             token = resp.read().decode('utf8')
-            print(token)
             cfg.write(token)
             cfg.close()
             return True
