@@ -1,0 +1,3 @@
+pip
+python-daemon
+psutil
