@@ -1,3 +1,7 @@
+#local data
+/ls_prod
+/ls_test
+
 # intellij crap
 /.idea
 *.iml
