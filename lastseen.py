@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 """lastseen-cli is a fairly basic client to update your lastseen time on lastseen.me"""
 import sys
+import traceback
 import time
 import urllib.request
 import json
@@ -12,13 +13,38 @@ from getpass import getpass
 import daemon
 from daemon import pidfile
 import psutil
-#import gi
 from gi.repository import GObject
 import dbus
 from dbus.mainloop.glib import DBusGMainLoop
 
+# set our potential testing data
+TESTING=False
 APP_URL = "https://lastseen.me"
-#APP_URL = "http://lastseen"
+
+def setup_test(file_name):
+    try:
+        with open('ls_'+ file_name) as cfg:
+            test_obj = json.loads(cfg.read())
+            return test_obj
+    except FileNotFoundError:
+        raise FileNotFoundError(os.environ['LASTSEEN_TESTING'] + ' : ' + file_name + ' data not found')
+    except:
+        raise Exception(os.environ['LASTSEEN_TESTING'] + ' : ' +file_name + 'data not found, WTF?')
+
+try:
+    if os.environ['LASTSEEN_TESTING'] == 'dev':
+        test_obj = setup_test('test')
+    elif os.environ['LASTSEEN_TESTING'] == 'prod':
+        test_obj = setup_test('prod')
+
+    TESTING = True
+    APP_URL = test_obj['url']
+    EMAIL = test_obj['email']
+    PASSWORD = test_obj['passwd']
+
+except KeyError as ke:
+    pass
+
 # protect the file descriptors against pyinstaller builds
 FDS_TO_MYSELF = []
 if getattr(sys, 'frozen', False):
@@ -53,7 +79,8 @@ class LastSeen(object):
 
     def setup_logger(self):
         """setup logging """
-        logfh = RotatingFileHandler(self.user_home + '/lastseen.log')
+        # maxBytes = 1kb
+        logfh = RotatingFileHandler(self.user_home + '/lastseen.log', mode='a', maxBytes=100000)
         logfh.setLevel(logging.DEBUG)
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         logfh.setFormatter(formatter)
@@ -68,9 +95,9 @@ class LastSeen(object):
                 self.cfg_obj = json.loads(cfg.read())
                 return True
         except FileNotFoundError:
-            raise FileNotFoundError('config file not found, please run --config')
+            raise FileNotFoundError('config file not found, please run with --config')
         except:
-            raise Exception('invalid config file, please run --config')
+            raise Exception('invalid config file, please run with --config')
 
 
     def load_config(self, fresh=True):
@@ -92,18 +119,18 @@ class LastSeen(object):
             print("Welcome to LastSeen\n\nLogin to your account " +
                   "and we'll grab a token to make this seemless.\n")
 
-        email = input("Email Address: ")
-        passw = getpass("We'll use this ONCE to grab a token you can revoke at any time" +
-                        "\nPassword: ")
-        #email = 'jessedp@gmail.com'
-        #prod
-            #passw = '#oJB&Q*48J46i&wFXU!fYCLNQ8Hy$nbGoO82%RqkmUl*y'
-        #dev
-        #passw = '6qL6Nrhg8AQ9'
-        
+        if TESTING is True:
+            email = EMAIL
+            passw = PASSWORD
+        else:
+            email = input("Email Address: ")
+            passw = getpass("We'll use this ONCE to grab a token you can revoke at any time" +
+                           "\nPassword: ")
+
         params = json.dumps({'email': email, 'password': passw}).encode('utf8')
         req = urllib.request.Request(APP_URL + '/api/auth/login', data=params,
-                                     headers={'content-type': 'application/json'})
+                                     headers={'content-type': 'application/json',
+                                              'Accept': 'application/json'})
         # grab the token data and save it
         try:
             resp = urllib.request.urlopen(req)
@@ -129,13 +156,13 @@ class LastSeen(object):
         
         params = json.dumps({'token': self.cfg_obj['access_token']}).encode('utf8')
 
-        req = urllib.request.Request(APP_URL + '/api/auth/ping', data=params,
+        req = urllib.request.Request(APP_URL + '/api/ping', data=params,
                                      headers={'content-type': 'application/json',
                                               'Accept': 'application/json'})
         try:
-            resp = urllib.request.urlopen(req)
+            resp = urllib.request.urlopen(req, timeout=5)
             cfg = open(self.cfg_file, 'w')
-            # ping will return a refresed token, so save that for next time
+            # ping will return a refreshed token, so save that for next time
             token = resp.read().decode('utf8')
             cfg.write(token)
             cfg.close()
@@ -143,15 +170,17 @@ class LastSeen(object):
             return True
         except urllib.error.HTTPError as herr:
             if herr.code == 401:
-                self.logger.info("401: couldn't load 'ping', please try again later...")
+                self.logger.info("401: couldn't load 'ping', please run --config again")
             elif herr.code == 500:
-                self.logger.error("500: " +
+                self.logger.error("500: " + herr.msg + "\n" +
                                   "Uh-oh, looks like the server is having a bad hair day. " +
                                   "Please try again later or report this if it persists.")
-                self.logger.error(herr.msg)
             else:
-                self.logger.error(herr.code + ': '+ herr.msg)
-
+                self.logger.error(str(herr.code) + ': '+ herr.msg + "\n" +
+                                  "Uh-oh, looks like the server is having a bad hair day. " +
+                                  "Please try again later or report this if it persists."
+                                  )
+                
     def filter_cb(self, bus, message):
         """ the dbus filter callback to determine if we should do something """
         if message.get_member() != "ActiveChanged":
@@ -246,8 +275,12 @@ if __name__ == '__main__':
                     print("WTF!?!??!?")
         except KeyboardInterrupt as keyb:
             print("\n\nOkay, bye. Feel free to try again later.")
-            exit(0)
+            sys.exit(0)
         except Exception as ex:
-            print("Unexpected error: " + type(ex).__name__)
-            print ("\t" + ex.args[0])
-            exit(-1)
+            if TESTING is True:
+                print(traceback.format_exc())
+                print("Unexpected error: " + type(ex).__name__)
+                print ("\t" + ex.args[0])
+            else:
+                print(ex)
+            sys.exit(-1)
