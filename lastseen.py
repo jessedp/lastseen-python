@@ -1,7 +1,9 @@
 #!/usr/bin/env python
 """lastseen-cli is a fairly basic client to update your lastseen time on lastseen.me"""
 import sys
+from gettext import gettext as _
 import traceback
+from argparse import ArgumentParser, SUPPRESS
 import requests
 from requests.exceptions import HTTPError
 import json
@@ -53,28 +55,18 @@ if getattr(sys, 'frozen', False):
          if of.path == sys.executable]
     )
 
-
-def show_help():
-    app_help = """
+BANNER = """
  __     __   ____  ____  ____  ____  ____  __ _ 
 (  )   / _\ / ___)(_  _)/ ___)(  __)(  __)(  ( \\
 / (_/\/    \\\\___ \  )(  \___ \ ) _)  ) _) /    /
 \____/\_/\_/(____/ (__) (____/(____)(____)\_)__)
 
 An update client for LastSeen.
+"""
 
-Version: %s
+VERSION = """Version: %s
 Build: %s
-
-valid arguments:
-    --config    - setup the client for use. Running this will re-run the entire login process and overwrite any previous
-                  config.
-    --run       - run the client once. This will check for an existing config file and prompt for one until it exists. 
-                  Ctrl+C will get you out.
-    --daemon    - once you're happy with the config, use this to launch a daemon that you don't have to worry about.
-                  Not a horrible idea to use it in a startup script.
-    """
-    print(app_help)
+"""
 
 class LastSeen(object):
     """ LastSeen cli client class """
@@ -133,7 +125,7 @@ class LastSeen(object):
 
         default = {
             401: 'Unable to authenicate (from ' + by + ')',
-            402: 'Unable to locate destination, please try again later (from ' + by + ')',
+            404: 'Unable to locate destination, please try again later (from ' + by + ')',
             500: "Uh-oh, looks like the server is having a bad hair day. " +
                  "Please try again later or report this if it persists."
         }
@@ -264,44 +256,52 @@ class LastSeen(object):
             self.logger.exception("Unexpected error:" + str(sys.exc_info()[0]))
 
 
+class ArgParser(ArgumentParser):
+    def error(self, message):
+        usage = self.usage
+        self.usage = None
+        #self.print_usage(_sys.stderr)
+        self.print_help()
+        self.exit(2, _("\n%s: error: %s\n\n") % (self.prog, message))
+        self.usage = usage
+
+
 if __name__ == '__main__':
     LS = LastSeen()
 
-    VALID_ARGS = ['config', 'run', 'daemon']
-    ARGS = sys.argv[1:]
-    INV = 0
-    for i, item in enumerate(ARGS):
-        try:
-            ARGS[i] = ARGS[i][2:]
-            if not ARGS[i] in VALID_ARGS:
-                raise Exception()
-        except:
-            INV += 1 #remove if we're just going to bail
-            print("INVALID ARGUMENT(s): %s\n" % " ".join(sys.argv[1:]))
-            show_help()
-            exit(0)
+    parser = ArgParser(
+        description='An update client for LastSeen.',
+        usage=SUPPRESS
+    )
 
-    if len(ARGS) < 1:
-        show_help()
-    else:
-        try:
-            for a in ARGS:
-                if a == 'config':
-                    LS.config()
-                elif a == 'run':
-                    LS.run()
-                elif a == 'daemon':
-                    LS.run_daemon()
-                else:
-                    print("WTF!?!??!?")
-        except KeyboardInterrupt as keyb:
-            print("\n\nOkay, bye. Feel free to try again later.")
-            sys.exit(0)
-        except Exception as ex:
-            if TESTING is True:
-                print(traceback.format_exc())
-                print("Unexpected error: " + type(ex).__name__)
-                print ("\t" + ex.args[0])
-            else:
-                print(ex)
-            sys.exit(-1)
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument('-c', '--config', action = 'store_true',
+                       help='Configure the client for use. Running this will re-run the entire login process and overwrite any previous config.')
+    group.add_argument('-r', '--run', action='store_true',
+                       help='Run the client once. This will check for an existing config file and prompt for one ' +
+                            'until it exists. Ctrl + C will get you out.')
+    group.add_argument('-d', '--daemon', action='store_true',
+                       help='Launch the client as a daemon. Not a horrible idea to use it in a startup script.')
+    args = parser.parse_args()
+
+    try:
+        if args.config:
+            LS.config()
+        elif args.run:
+            LS.run()
+        elif args.daemon:
+            LS.run_daemon()
+        else:
+            print(BANNER)
+            parser.print_help()
+    except KeyboardInterrupt as keyb:
+        print("\n\nOkay, bye. Feel free to try again later.")
+        sys.exit(0)
+    except Exception as ex:
+        if TESTING is True:
+            print(traceback.format_exc())
+            print("Unexpected error: " + type(ex).__name__)
+            print("\t" + ex.args[0])
+        else:
+            print(ex)
+        sys.exit(-1)
