@@ -113,6 +113,30 @@ class LastSeen(object):
                   "not found or invalid, let's create it, shall we\n")
             self.config()
 
+    def httpErr(self, err):
+        """ handle HTTPError exceptions from requests"""
+        self.logger.info(err)
+
+        by = sys._getframe(1).f_code.co_name
+        code = err.response.status_code
+
+        default = {
+            401: 'Unable to authenicate (from ' + by + ')',
+            402: 'Unable to locate destination, please try again later (from ' + by + ')',
+            500: "Uh-oh, looks like the server is having a bad hair day. " +
+                 "Please try again later or report this if it persists."
+        }
+        map = {
+            'config': {
+                401: "Sorry, wrong email/password combination, please try again",
+                },
+            'run': {
+                401: "Unable to authenicate using 'ping', please run --config again"
+                },
+        }
+        msgs = map.get(by, default)
+        self.logger.warning( msgs.get(code, default.get(code, "Unknown HTTPError (from " + by + ")") ) )
+
     def config(self, show_intro=True):
         """ do the actual configuration and save it when valid """
         if show_intro is True:
@@ -141,15 +165,9 @@ class LastSeen(object):
             cfg.close()
             return True
         except HTTPError as e:
-            if e.response.status_code == 401:
-                print("\nSorry, wrong email/password combination, please try again\n")
-                self.config()
-            elif e.response.status_code == 500:
-                print("\nUh-oh, looks like the server is having a bad hair day. " +
-                      "Please try again later or report this if it persists.")
-                print(e)
-            else:
-                print(e)
+            self.httpErr(e)
+            if (e.response.status_code == 401):
+                return self.config()
 
     def run(self):
         """ a single run to update the lastseen time with the server """
@@ -158,7 +176,7 @@ class LastSeen(object):
         params = json.dumps({'token': self.cfg_obj['access_token']}).encode('utf8')
         try:
 
-            resp = requests.post(APP_URL + '/api/ping', data=params,
+            resp = requests.post(APP_URL + '/api/pingw', data=params,
                                 headers={'content-type': 'application/json',
                                          'Accept': 'application/json'})
 
@@ -171,15 +189,8 @@ class LastSeen(object):
             self.logger.info("updated lastseen time and refreshed token")
             return True
         except HTTPError as e:
-            self.logger.info(e)
-            if e.response.status_code == 401:
-                self.logger.warn("Unable to authenicate using 'ping', please run --config again")
-            elif e.response.status_code == 404:
-                self.logger.warn("Please try again later.")
-            else:
-                self.logger.error("Uh-oh, looks like the server is having a bad hair day. " +
-                                  "Please try again later or report this if it persists.")
-                
+            self.httpErr(e)
+
     def filter_cb(self, bus, message):
         """ the dbus filter callback to determine if we should do something """
         if message.get_member() != "ActiveChanged":
