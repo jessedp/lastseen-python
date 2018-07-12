@@ -55,7 +55,18 @@ if getattr(sys, 'frozen', False):
 
 
 def show_help():
-    app_help = """valid arguments:
+    app_help = """
+ __     __   ____  ____  ____  ____  ____  __ _ 
+(  )   / _\ / ___)(_  _)/ ___)(  __)(  __)(  ( \\
+/ (_/\/    \\\\___ \  )(  \___ \ ) _)  ) _) /    /
+\____/\_/\_/(____/ (__) (____/(____)(____)\_)__)
+
+An update client for LastSeen.
+
+Version: %s
+Build: %s
+
+valid arguments:
     --config    - setup the client for use. Running this will re-run the entire login process and overwrite any previous
                   config.
     --run       - run the client once. This will check for an existing config file and prompt for one until it exists. 
