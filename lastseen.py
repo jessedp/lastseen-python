@@ -2,8 +2,8 @@
 """lastseen-cli is a fairly basic client to update your lastseen time on lastseen.me"""
 import sys
 import traceback
-import time
-import urllib.request
+import requests
+from requests.exceptions import HTTPError
 import json
 import os
 from os.path import expanduser
@@ -128,58 +128,57 @@ class LastSeen(object):
                            "\nPassword: ")
 
         params = json.dumps({'email': email, 'password': passw}).encode('utf8')
-        req = urllib.request.Request(APP_URL + '/api/auth/login', data=params,
-                                     headers={'content-type': 'application/json',
-                                              'Accept': 'application/json'})
         # grab the token data and save it
         try:
-            resp = urllib.request.urlopen(req)
+            resp = requests.post(APP_URL + '/api/auth/login', data=params,
+                                headers={'content-type': 'application/json',
+                                         'Accept': 'application/json'})
+            resp.raise_for_status()
+
             cfg = open(self.cfg_file, 'w')
-            token = resp.read().decode('utf8')
+            token = resp.text
             cfg.write(token)
             cfg.close()
             return True
-        except urllib.error.HTTPError as herr:
-            if herr.code == 401:
+        except HTTPError as e:
+            if e.response.status_code == 401:
                 print("\nSorry, wrong email/password combination, please try again\n")
                 self.config()
-            elif herr.code == 500:
+            elif e.response.status_code == 500:
                 print("\nUh-oh, looks like the server is having a bad hair day. " +
                       "Please try again later or report this if it persists.")
-                print(herr.msg)
+                print(e)
             else:
-                print(herr.code + ': ' + herr.msg)
+                print(e)
 
     def run(self):
         """ a single run to update the lastseen time with the server """
         self.get_config()
-        
-        params = json.dumps({'token': self.cfg_obj['access_token']}).encode('utf8')
 
-        req = urllib.request.Request(APP_URL + '/api/ping', data=params,
-                                     headers={'content-type': 'application/json',
-                                              'Accept': 'application/json'})
+        params = json.dumps({'token': self.cfg_obj['access_token']}).encode('utf8')
         try:
-            resp = urllib.request.urlopen(req, timeout=5)
+
+            resp = requests.post(APP_URL + '/api/ping', data=params,
+                                headers={'content-type': 'application/json',
+                                         'Accept': 'application/json'})
+
+            resp.raise_for_status()
             cfg = open(self.cfg_file, 'w')
             # ping will return a refreshed token, so save that for next time
-            token = resp.read().decode('utf8')
+            token = resp.text
             cfg.write(token)
             cfg.close()
             self.logger.info("updated lastseen time and refreshed token")
             return True
-        except urllib.error.HTTPError as herr:
-            if herr.code == 401:
-                self.logger.info("401: couldn't load 'ping', please run --config again")
-            elif herr.code == 500:
-                self.logger.error("500: " + herr.msg + "\n" +
-                                  "Uh-oh, looks like the server is having a bad hair day. " +
-                                  "Please try again later or report this if it persists.")
+        except HTTPError as e:
+            self.logger.info(e)
+            if e.response.status_code == 401:
+                self.logger.warn("Unable to authenicate using 'ping', please run --config again")
+            elif e.response.status_code == 404:
+                self.logger.warn("Please try again later.")
             else:
-                self.logger.error(str(herr.code) + ': '+ herr.msg + "\n" +
-                                  "Uh-oh, looks like the server is having a bad hair day. " +
-                                  "Please try again later or report this if it persists."
-                                  )
+                self.logger.error("Uh-oh, looks like the server is having a bad hair day. " +
+                                  "Please try again later or report this if it persists.")
                 
     def filter_cb(self, bus, message):
         """ the dbus filter callback to determine if we should do something """
