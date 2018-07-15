@@ -1,4 +1,5 @@
-pip
+autopep8
+flake8
 requests
 python-daemon
 psutil
