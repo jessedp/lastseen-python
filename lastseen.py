@@ -1,12 +1,14 @@
 #!/usr/bin/env python
-"""lastseen-cli is a fairly basic client to update your lastseen time on lastseen.me"""
+"""lastseen-cli is a client to update your lastseen time on lastseen.me"""
+
 import sys
 from gettext import gettext as _
 import traceback
 from argparse import ArgumentParser, SUPPRESS
+import json
+
 import requests
 from requests.exceptions import HTTPError
-import json
 import os
 from os.path import expanduser
 import logging
@@ -20,18 +22,20 @@ import dbus
 from dbus.mainloop.glib import DBusGMainLoop
 
 # set our potential testing data
-TESTING=False
+TESTING = False
 APP_URL = "https://lastseen.me"
 
 def setup_test(file_name):
+    """ loads potential env data    """
     try:
-        with open('ls_'+ file_name) as cfg:
+        with open('ls_' + file_name) as cfg:
             test_obj = json.loads(cfg.read())
             return test_obj
     except FileNotFoundError:
-        raise FileNotFoundError(os.environ['LASTSEEN_TESTING'] + ' : ' + file_name + ' data not found')
-    except:
-        raise Exception(os.environ['LASTSEEN_TESTING'] + ' : ' +file_name + 'data not found, WTF?')
+        raise FileNotFoundError(
+            os.environ['LASTSEEN_TESTING'] + ' : ' + file_name +
+            ' data not found')
+
 
 try:
     if os.environ['LASTSEEN_TESTING'] == 'dev':
@@ -56,20 +60,21 @@ if getattr(sys, 'frozen', False):
     )
 
 BANNER = """
- __     __   ____  ____  ____  ____  ____  __ _ 
+ __     __   ____  ____  ____  ____  ____  __ _
 (  )   / _\ / ___)(_  _)/ ___)(  __)(  __)(  ( \\
 / (_/\/    \\\\___ \  )(  \___ \ ) _)  ) _) /    /
 \____/\_/\_/(____/ (__) (____/(____)(____)\_)__)
 
-An update client for LastSeen.
 """
 
 VERSION = """Version: %s
 Build: %s
 """
 
+
 class LastSeen(object):
     """ LastSeen cli client class """
+
     def __init__(self):
         self.user_home = expanduser('~' + '/.lastseen')
         if not os.path.exists(self.user_home):
@@ -83,9 +88,11 @@ class LastSeen(object):
     def setup_logger(self):
         """setup logging """
         # maxBytes = 1kb
-        logfh = RotatingFileHandler(self.user_home + '/lastseen.log', mode='a', maxBytes=100000)
+        logfh = RotatingFileHandler(
+            self.user_home + '/lastseen.log', mode='a', maxBytes=100000)
         logfh.setLevel(logging.DEBUG)
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        formatter = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         logfh.setFormatter(formatter)
         self.logger = logging.getLogger('lastseen')
         self.logger.setLevel(logging.DEBUG)
@@ -98,10 +105,8 @@ class LastSeen(object):
                 self.cfg_obj = json.loads(cfg.read())
                 return True
         except FileNotFoundError:
-            raise FileNotFoundError('config file not found, please run with --config')
-        except:
-            raise Exception('invalid config file, please run with --config')
-
+            raise FileNotFoundError(
+                'config file not found, please run with --config')
 
     def load_config(self, fresh=True):
         """ load the config file, running the config method when missing """
@@ -112,7 +117,7 @@ class LastSeen(object):
             self.get_config()
             return True
         except (IOError, json.JSONDecodeError):
-            print("config file [" + self.cfg_file+ "] " +
+            print("config file [" + self.cfg_file + "] " +
                   "not found or invalid, let's create it, shall we\n")
             self.config()
 
@@ -125,20 +130,24 @@ class LastSeen(object):
 
         default = {
             401: 'Unable to authenicate (from ' + by + ')',
-            404: 'Unable to locate destination, please try again later (from ' + by + ')',
-            500: "Uh-oh, looks like the server is having a bad hair day. " +
+            404: 'Unable to locate destination, please try again later '
+                 '(from ' + by + ')',
+            500: "Uh-oh, looks like the server is having a bad hair day. "
                  "Please try again later or report this if it persists."
         }
         map = {
             'config': {
-                401: "Sorry, wrong email/password combination, please try again",
-                },
+                401: "Sorry, wrong email/password combination, "
+                     "please try again",
+            },
             'run': {
-                401: "Unable to authenicate using 'ping', please run --config again"
-                },
+                401: "Unable to authenicate using 'ping', please run --config "
+                     "again"
+            },
         }
         msgs = map.get(by, default)
-        self.logger.warning( msgs.get(code, default.get(code, "Unknown HTTPError (from " + by + ")") ) )
+        self.logger.warning(msgs.get(code, default.get(
+            code, "Unknown HTTPError (from " + by + ")")))
 
     def config(self, show_intro=True):
         """ do the actual configuration and save it when valid """
@@ -151,15 +160,16 @@ class LastSeen(object):
             passw = PASSWORD
         else:
             email = input("Email Address: ")
-            passw = getpass("We'll use this ONCE to grab a token you can revoke at any time" +
-                           "\nPassword: ")
+            passw = getpass("We'll use this ONCE to grab a token you can "
+                            "revoke at any time"
+                            "\nPassword: ")
 
         params = json.dumps({'email': email, 'password': passw}).encode('utf8')
         # grab the token data and save it
         try:
             resp = requests.post(APP_URL + '/api/auth/login', data=params,
-                                headers={'content-type': 'application/json',
-                                         'Accept': 'application/json'})
+                                 headers={'content-type': 'application/json',
+                                          'Accept': 'application/json'})
             resp.raise_for_status()
 
             cfg = open(self.cfg_file, 'w')
@@ -169,19 +179,20 @@ class LastSeen(object):
             return True
         except HTTPError as e:
             self.httpErr(e)
-            if (e.response.status_code == 401):
+            if e.response.status_code == 401:
                 return self.config()
 
     def run(self):
         """ a single run to update the lastseen time with the server """
         self.get_config()
 
-        params = json.dumps({'token': self.cfg_obj['access_token']}).encode('utf8')
+        params = json.dumps(
+            {'token': self.cfg_obj['access_token']}).encode('utf8')
         try:
 
-            resp = requests.post(APP_URL + '/api/pingw', data=params,
-                                headers={'content-type': 'application/json',
-                                         'Accept': 'application/json'})
+            resp = requests.post(APP_URL + '/api/ping', data=params,
+                                 headers={'content-type': 'application/json',
+                                          'Accept': 'application/json'})
 
             resp.raise_for_status()
             cfg = open(self.cfg_file, 'w')
@@ -227,7 +238,8 @@ class LastSeen(object):
                         os.remove(str(pidf))
                         self.logger.info('removed stale pid')
                     else:
-                        self.logger.info('lastseen already running, exiting....')
+                        self.logger.info(
+                            'lastseen already running, exiting....')
                         return
 
             for f_h in self.logger.handlers:
@@ -248,11 +260,12 @@ class LastSeen(object):
 
                 DBusGMainLoop(set_as_default=True)
                 bus = dbus.SessionBus()
-                bus.add_match_string("type='signal',interface='org.gnome.ScreenSaver'")
+                bus.add_match_string(
+                    "type='signal',interface='org.gnome.ScreenSaver'")
                 bus.add_message_filter(self.filter_cb)
                 mainloop = GObject.MainLoop()
                 mainloop.run()
-        except:
+        except Exception:
             self.logger.exception("Unexpected error:" + str(sys.exc_info()[0]))
 
 
@@ -260,7 +273,7 @@ class ArgParser(ArgumentParser):
     def error(self, message):
         usage = self.usage
         self.usage = None
-        #self.print_usage(_sys.stderr)
+        # self.print_usage(_sys.stderr)
         self.print_help()
         self.exit(2, _("\n%s: error: %s\n\n") % (self.prog, message))
         self.usage = usage
@@ -275,13 +288,17 @@ if __name__ == '__main__':
     )
 
     group = parser.add_mutually_exclusive_group()
-    group.add_argument('-c', '--config', action = 'store_true',
-                       help='Configure the client for use. Running this will re-run the entire login process and overwrite any previous config.')
+    group.add_argument('-c', '--config', action='store_true',
+                       help='Configure the client for use. Running this will '
+                            're-run the entire login process and overwrite '
+                            'any previous config.')
     group.add_argument('-r', '--run', action='store_true',
-                       help='Run the client once. This will check for an existing config file and prompt for one ' +
+                       help='Run the client once. This will check for an '
+                            'existing config file and prompt for one '
                             'until it exists. Ctrl + C will get you out.')
     group.add_argument('-d', '--daemon', action='store_true',
-                       help='Launch the client as a daemon. Not a horrible idea to use it in a startup script.')
+                       help='Launch the client as a daemon. Not a horrible '
+                            'idea to use it in a startup script.')
     args = parser.parse_args()
 
     try:
