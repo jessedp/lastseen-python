@@ -3,5 +3,5 @@ flake8
 requests
 python-daemon
 psutil
-pygobject
+pygobject==3.27.0
 dbus-python
